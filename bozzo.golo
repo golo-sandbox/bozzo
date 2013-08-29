@@ -129,4 +129,150 @@ function jsonParse = |jsonSource| {
 
 }
 
+struct dumpHelper = { stringBuffer }
 
+augment bozzo.types.dumpHelper {
+
+    function addToStringBuffer = |this, s| -> this:stringBuffer(this:stringBuffer()+s)
+
+    function isDynamicObject = |this, o| -> o oftype DynamicObject.class
+    function isIterable = |this, o| -> o oftype java.util.LinkedList.class
+            or o oftype java.util.ArrayList.class
+            or o oftype java.util.LinkedHashSet.class
+
+    function isMap = |this, o| -> o oftype java.util.LinkedHashMap.class
+    function isArray = |this, o| -> o?:getClass()?:isArray() orIfNull false
+    function isTuple = |this,o| -> o oftype gololang.Tuple.class
+    function isStructure = |this,o| -> o?:getClass()?:getName()?:contains(".types.") orIfNull false
+
+    function isLong = |this, o| -> o oftype java.lang.Long.class
+    function isInteger = |this, o| -> o oftype java.lang.Integer.class
+    function isShort = |this, o| -> o oftype java.lang.Short.class
+    function isDouble = |this, o| -> o oftype java.lang.Double.class
+
+    function isByte = |this, o| -> o oftype java.lang.Byte.class
+
+    function isString = |this, o| -> o oftype java.lang.String.class
+
+    function isBoolean = |this, o| -> o oftype java.lang.Boolean.class
+
+    function isNumber = |this, o| -> this:isLong(o)
+        or this:isInteger(o)
+        or this:isShort(o)
+        or this:isDouble(o)
+
+
+    function isPrimitive = |this, o| -> this:isNumber(o) 
+        or this:isBoolean(o)
+        or this:isByte(o)
+        or this:isString(o)
+
+    function trim = |this, s| {
+        let regex_tab = """\t(?=([^"]*"[^"]*")*[^"]*$)"""
+        let regex_space = """ (?=([^"]*"[^"]*")*[^"]*$)"""
+        let regex_return = """\n(?=([^"]*"[^"]*")*[^"]*$)"""
+        let str = s
+            :replaceAll(regex_tab, "")
+            :replaceAll(regex_space, "")
+            :replaceAll(regex_return, "")
+        return str
+    }
+
+    function removeCommaBeforeCurlyBraces = |this, s| {
+        let regex_close = """,\}(?=([^"]*"[^"]*")*[^"]*$)"""
+        return s:replaceAll(regex_close, "}")
+    }
+
+    function removeCommaBeforeBrackets = |this, s| {
+        let regex_close = """,\](?=([^"]*"[^"]*")*[^"]*$)"""
+        return s:replaceAll(regex_close, "]")
+    }
+
+}
+
+local function getMembers = |o, helper| {
+    
+    #-----------------------------------------------
+    if helper:isArray(o) {
+        helper:addToStringBuffer("[")
+        foreach item in o {
+            getMembers(item, helper)    
+        }
+        helper:addToStringBuffer("],")
+    }
+
+    if helper:isIterable(o) {
+        helper:addToStringBuffer("[")
+        o:each(|item|->getMembers(item, helper)) 
+        helper:addToStringBuffer("],")
+    }
+    #-----------------------------------------------
+
+    if helper:isDynamicObject(o) {
+        helper:addToStringBuffer("{")
+        let members = o:properties()        
+        members:each(|member| {
+            let value = member:getValue()
+            if helper:isPrimitive(value) {
+                #TODO : test if numeric : double, long, integer, ...
+                if helper:isNumber(value) or helper:isBoolean(value) {
+                    helper:addToStringBuffer("\""+member:getKey()+"\":"+value+",")
+                } else {
+                    helper:addToStringBuffer("\""+member:getKey()+"\":\""+value+"\",")
+                }
+            } else {
+                helper:addToStringBuffer("\""+member:getKey()+"\":")
+            }
+            getMembers(value, helper)
+        })
+        helper:addToStringBuffer("},")
+    }
+
+    if helper:isStructure(o) { 
+        helper:addToStringBuffer("{")
+        let members = o:members()
+        members:each(|member| {
+            let value = o:get(member)
+            if helper:isPrimitive(value) {
+                if helper:isNumber(value) or helper:isBoolean(value) {
+                    helper:addToStringBuffer("\""+member+"\":"+value+",")
+                } else {
+                    helper:addToStringBuffer("\""+member+"\":\""+value+"\",")                   
+                }               
+            } else {
+                helper:addToStringBuffer("\""+member+"\":")
+            }           
+            getMembers(value, helper)
+        })  
+        helper:addToStringBuffer("},")  
+    }
+
+    if helper:isMap(o) {
+        helper:addToStringBuffer("{")
+        o:each(|key, value| {
+            if helper:isPrimitive(value) {
+                if helper:isNumber(value) or helper:isBoolean(value) {
+                    helper:addToStringBuffer("\""+key+"\":"+value+",")
+                } else {
+                    helper:addToStringBuffer("\""+key+"\":\""+value+"\",")
+                }
+            } else {
+                helper:addToStringBuffer("\""+key+"\":")
+            }
+            getMembers(value, helper)
+        })
+        helper:addToStringBuffer("},")
+    }
+
+}
+
+function jsonStringify = |objectToStringify| {
+    let helper = dumpHelper():stringBuffer("")
+    getMembers(objectToStringify, helper)
+    let jsonString = helper:removeCommaBeforeBrackets(
+            helper:removeCommaBeforeCurlyBraces(
+                helper:stringBuffer()
+            )
+        )
+    return jsonString:substring(0, jsonString:length() - 1 )
+}

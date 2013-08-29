@@ -17,7 +17,7 @@ function main = |args| {
                 "firstName":"Peggy", 
                 "lastName":"Bundy"
             },
-            "childs":[
+            "children":[
                 {"firstName":"Kelly","lastName":"Bundy"},
                 {"firstName":"Bud","lastName":"Bundy"}
             ]
